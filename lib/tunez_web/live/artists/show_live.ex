@@ -7,8 +7,8 @@ defmodule TunezWeb.Artists.ShowLive do
     {:ok, socket}
   end
 
-  def handle_params(%{"id" => id}, _url, socket) do
-    artist = Tunez.Music.get_artist_by_id!(id)
+  def handle_params(%{"id" => artist_id}, _url, socket) do
+    artist = Tunez.Music.get_artist_by_id!(artist_id, load: [:albums])
 
     albums = [
       %{
@@ -35,6 +35,9 @@ defmodule TunezWeb.Artists.ShowLive do
         <.h1>
           {@artist.name}
         </.h1>
+        <:subtitle :if={@artist.previous_names != []}>
+          formerly known as: {Enum.join(@artist.previous_names, ", ")}
+        </:subtitle>
         <:action>
           <.button_link
             kind="error"
@@ -58,7 +61,7 @@ defmodule TunezWeb.Artists.ShowLive do
       </.button_link>
 
       <ul class="mt-10 space-y-6 md:space-y-10">
-        <li :for={album <- @albums}>
+        <li :for={album <- @artist.albums}>
           <.album_details album={album} />
         </li>
       </ul>
@@ -148,18 +151,6 @@ defmodule TunezWeb.Artists.ShowLive do
   end
 
   def handle_event("destroy-artist", _params, socket) do
-    {:noreply, socket}
-  end
-
-  def handle_event("destroy-album", _params, socket) do
-    {:noreply, socket}
-  end
-
-  def handle_event("follow", _params, socket) do
-    {:noreply, socket}
-  end
-
-  def handle_event("unfollow", _params, socket) do
     case Tunez.Music.destroy_artist(socket.assigns.artist) do
       :ok ->
         socket =
@@ -178,5 +169,38 @@ defmodule TunezWeb.Artists.ShowLive do
 
         {:noreply, socket}
     end
+  end
+
+  def handle_event("destroy-album", %{"id" => album_id}, socket) do
+    case Tunez.Music.destroy_album(album_id) do
+      :ok ->
+        socket =
+          socket
+          |> update(:artist, fn artist->
+            Map.update!(artist, :albums, fn albums->
+              Enum.reject(albums, &(&1.id == album_id))
+            end)
+          end)
+          |> put_flash(:info, "Album deleted successfully")
+
+        {:noreply, socket}
+
+        {:error, error}->
+          Logger.info("Could not delete album '#{album_id}': #{inspect(error)}")
+
+          socket =
+            socket
+            |> put_flash(:error, "Could not delete album")
+
+          {:noreply, socket}
+        end
+      end
+
+  def handle_event("follow", _params, socket) do
+    {:noreply, socket}
+  end
+
+  def handle_event("unfollow", _params, socket) do
+    {:noreply, socket}
   end
 end

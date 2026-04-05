@@ -1,13 +1,30 @@
 defmodule TunezWeb.Albums.FormLive do
   use TunezWeb, :live_view
 
-  def mount(_params, _session, socket) do
-    form = %{}
+  require Logger
+
+  def mount(%{"id" => album_id}, _session, socket) do
+    album = Tunez.Music.get_album_by_id!(album_id, load: [:artist])
+    form = Tunez.Music.form_to_update_album(album)
+
+    socket =
+      socket
+      |> assign(:form, to_form(form))
+      |> assign(:page_title, "Edit Album")
+      |> assign(:artist, album.artist)
+
+    {:ok, socket}
+  end
+
+  def mount(%{"artist_id" => artist_id}, _session, socket) do
+    artist = Tunez.Music.get_artist_by_id!(artist_id)
+    form = Tunez.Music.form_to_create_album(artist.id)
 
     socket =
       socket
       |> assign(:form, to_form(form))
       |> assign(:page_title, "New Album")
+      |> assign(:artist, artist)
 
     {:ok, socket}
   end
@@ -27,7 +44,7 @@ defmodule TunezWeb.Albums.FormLive do
         phx-change="validate"
         phx-submit="save"
       >
-        <.input name="artist_id" label="Artist" value="" disabled />
+        <.input name="artist_id" label="Artist" value={@artist.name} disabled />
         <div class="sm:flex gap-8 space-y-8 md:space-y-0">
           <div class="sm:w-3/4"><.input field={form[:name]} label="Name" /></div>
           <div class="sm:w-1/4">
@@ -93,12 +110,35 @@ defmodule TunezWeb.Albums.FormLive do
     """
   end
 
-  def handle_event("validate", %{"form" => _form_data}, socket) do
+  def handle_event("validate", %{"form" => form_data}, socket) do
+    socket =
+      update(socket, :form, fn form ->
+        AshPhoenix.Form.validate(form, form_data)
+      end)
+
     {:noreply, socket}
   end
 
-  def handle_event("save", %{"form" => _form_data}, socket) do
-    {:noreply, socket}
+  def handle_event("save", %{"form" => form_data}, socket) do
+    case AshPhoenix.Form.submit(socket.assigns.form, params: form_data) do
+      {:ok, album} ->
+        socket =
+          socket
+          |> put_flash(:success, "Album saved successfully")
+          |> push_navigate(to: ~p"/artists/#{album.artist_id}")
+
+        {:noreply, socket}
+
+      {:error, form} ->
+        socket =
+          socket
+          |> put_flash(:error, "Album could not be saved")
+          |> assign(form: form)
+
+        Logger.info("Failed to save album: #{inspect(form)}")
+
+        {:noreply, socket}
+    end
   end
 
   def handle_event("add-track", _params, socket) do
